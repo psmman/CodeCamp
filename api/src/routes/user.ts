@@ -27,6 +27,7 @@ import { trimTags } from '../utils/validation';
 import { generateReportEmail } from '../utils/email-templates';
 import { createResetProperties } from '../utils/create-user';
 import { challengeTypes } from '../../../shared/config/challenge-types';
+import { isRestricted } from './helpers/is-restricted';
 
 // user flags that the api-server returns as false if they're missing in the
 // user document. Since Prisma returns null for missing fields, we need to
@@ -771,6 +772,31 @@ export const userPublicGetRoutes: FastifyPluginCallbackTypebox = (
           result: user.username
         });
       }
+    }
+  );
+
+  fastify.get(
+    '/api/users/exists',
+    {
+      schema: schemas.userExists,
+      attachValidation: true
+    },
+    async (req, reply) => {
+      if (req.validationError) {
+        void reply.code(400);
+        return await reply.send({ exists: true });
+      }
+
+      const username = req.query.username.toLowerCase();
+
+      if (isRestricted(username)) return await reply.send({ exists: true });
+
+      const exists =
+        (await fastify.prisma.user.count({
+          where: { username }
+        })) > 0;
+
+      await reply.send({ exists });
     }
   );
 
