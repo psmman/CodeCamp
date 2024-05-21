@@ -14,11 +14,10 @@ import type {
 } from 'fastify';
 import { ResolveFastifyReplyType } from 'fastify/types/type-provider';
 import { differenceInMinutes } from 'date-fns';
-import { isProfane } from 'no-profanity';
 
-import { blocklistedUsernames } from '../../../shared/config/constants';
 import { isValidUsername } from '../../../shared/utils/validate';
 import * as schemas from '../schemas';
+import { isRestricted } from './helpers/is-restricted';
 
 type WaitMesssageArgs = {
   sentAt: Date | null;
@@ -358,15 +357,12 @@ ${isLinkSentWithinLimitTTL}`
 
         if (!validation.valid) {
           void reply.code(400);
-          return {
+          return reply.send({
             // TODO(Post-MVP): custom validation errors.
             message: `Username ${newUsername} ${validation.error}`,
             type: 'info'
-          } as const;
+          });
         }
-
-        const isUserNameProfane = isProfane(newUsername);
-        const onBlocklist = blocklistedUsernames.includes(newUsername);
 
         const usernameTaken =
           newUsername === oldUsername
@@ -375,12 +371,12 @@ ${isLinkSentWithinLimitTTL}`
                 where: { username: newUsername }
               });
 
-        if (usernameTaken || isUserNameProfane || onBlocklist) {
+        if (usernameTaken || isRestricted(newUsername)) {
           void reply.code(400);
-          return {
+          return reply.send({
             message: 'flash.username-taken',
             type: 'info'
-          } as const;
+          });
         }
 
         await fastify.prisma.user.update({
@@ -391,15 +387,15 @@ ${isLinkSentWithinLimitTTL}`
           }
         });
 
-        return {
+        return reply.send({
           message: 'flash.username-updated',
           type: 'success',
-          username: newUsernameDisplay
-        } as const;
+          variables: { username: newUsernameDisplay }
+        });
       } catch (err) {
         fastify.log.error(err);
         void reply.code(500);
-        return { message: 'flash.wrong-updating', type: 'danger' } as const;
+        await reply.send({ message: 'flash.wrong-updating', type: 'danger' });
       }
     }
   );
